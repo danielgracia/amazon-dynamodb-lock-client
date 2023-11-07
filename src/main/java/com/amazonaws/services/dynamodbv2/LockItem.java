@@ -24,8 +24,12 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
+
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 /**
@@ -46,6 +50,7 @@ public class LockItem implements Closeable {
     private final StringBuffer recordVersionNumber;
     private final AtomicLong leaseDuration;
     private final Map<String, AttributeValue> additionalAttributes;
+    private final ReentrantLock workLock;
 
     private final Optional<SessionMonitor> sessionMonitor;
 
@@ -93,6 +98,8 @@ public class LockItem implements Closeable {
         this.isReleased = isReleased;
         this.sessionMonitor = sessionMonitor;
         this.additionalAttributes = additionalAttributes;
+
+        this.workLock = new ReentrantLock();
     }
 
     /**
@@ -391,5 +398,25 @@ public class LockItem implements Closeable {
             throw new SessionMonitorNotSetException("Can't run callback without first setting SessionMonitor");
         }
         this.sessionMonitor.get().runCallback();
+    }
+
+    /**
+     * Does lock updating/cleanup actions - needed for heartbeat handling and to avoid synchronized blocks
+     * due to (unfortunately) affecting throughput when using virtual threads.
+     */
+    <V> V runWhileLocked(Callable<V> r) {
+        workLock.lock();
+        try {
+            return r.call();
+        } catch (Exception e) {
+            if(e instanceof RuntimeException re) throw re;
+            else throw new RuntimeException(e);
+        } finally {
+            workLock.unlock();
+        }
+    }
+
+    void runWhileLocked(Runnable r) {
+        runWhileLocked(Executors.callable(r));
     }
 }
