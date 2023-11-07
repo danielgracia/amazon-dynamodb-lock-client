@@ -932,10 +932,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     private void releaseAllLocks() {
         final Map<String, LockItem> locks = new HashMap<>(this.locks);
-        synchronized (locks) {
-            for (final Entry<String, LockItem> lockEntry : locks.entrySet()) {
-                this.releaseLock(lockEntry.getValue()); // TODO catch exceptions and report failure separately
-            }
+        for (final Entry<String, LockItem> lockEntry : locks.entrySet()) {
+            this.releaseLock(lockEntry.getValue()); // TODO catch exceptions and report failure separately
         }
     }
 
