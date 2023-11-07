@@ -999,7 +999,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         Map<String, AttributeValue> item = new HashMap<>(immutableItem);
         final Optional<ByteBuffer> data = Optional.ofNullable(item.get(DATA)).map(dataAttributionValue -> {
             item.remove(DATA);
-            return dataAttributionValue.b().asByteBuffer();
+            return ByteBuffer.wrap(dataAttributionValue.b().asByteArray());
         });
 
         final AttributeValue ownerName = item.remove(OWNER_NAME);
