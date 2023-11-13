@@ -833,7 +833,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             return false;
         }
 
-        synchronized (lockItem) {
+        return lockItem.runWhileLocked(() -> {
             try {
                 // Always remove the heartbeat for the lock. The
                 // caller's intention is to release the lock. Stopping the
@@ -910,8 +910,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             // may be existing clients that depend on the monitor firing if they
             // get exceptions from this method.
             this.removeKillSessionMonitor(lockItem.getUniqueIdentifier());
-        }
-        return true;
+            return true;
+        });
     }
 
     private Map<String, AttributeValue> getItemKeys(LockItem lockItem) {
@@ -932,10 +932,8 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
      */
     private void releaseAllLocks() {
         final Map<String, LockItem> locks = new HashMap<>(this.locks);
-        synchronized (locks) {
-            for (final Entry<String, LockItem> lockEntry : locks.entrySet()) {
-                this.releaseLock(lockEntry.getValue()); // TODO catch exceptions and report failure separately
-            }
+        for (final Entry<String, LockItem> lockEntry : locks.entrySet()) {
+            this.releaseLock(lockEntry.getValue()); // TODO catch exceptions and report failure separately
         }
     }
 
@@ -1001,7 +999,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
         Map<String, AttributeValue> item = new HashMap<>(immutableItem);
         final Optional<ByteBuffer> data = Optional.ofNullable(item.get(DATA)).map(dataAttributionValue -> {
             item.remove(DATA);
-            return dataAttributionValue.b().asByteBuffer();
+            return ByteBuffer.wrap(dataAttributionValue.b().asByteArray());
         });
 
         final AttributeValue ownerName = item.remove(OWNER_NAME);
@@ -1131,10 +1129,12 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             throw new IllegalArgumentException("data must not be present if deleteData is true");
         }
 
-        long leaseDurationToEnsureInMilliseconds = this.leaseDurationInMilliseconds;
+        final long leaseDurationToEnsureInMilliseconds;
         if (options.getLeaseDurationToEnsure() != null) {
             Objects.requireNonNull(options.getTimeUnit(), "TimeUnit must not be null if leaseDurationToEnsure is not null");
             leaseDurationToEnsureInMilliseconds = options.getTimeUnit().toMillis(options.getLeaseDurationToEnsure());
+        } else {
+            leaseDurationToEnsureInMilliseconds = this.leaseDurationInMilliseconds;
         }
 
         final LockItem lockItem = options.getLockItem();
@@ -1143,7 +1143,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
             throw new LockNotGrantedException("Cannot send heartbeat because lock is not granted");
         }
 
-        synchronized (lockItem) {
+        lockItem.runWhileLocked(() -> {
             //Set up condition for UpdateItem. Basically any changes require:
             //1. I own the lock
             //2. I know the current version number
@@ -1214,7 +1214,7 @@ public class AmazonDynamoDBLockClient implements Runnable, Closeable {
                     throw awsServiceException;
                 }
             }
-        }
+        });
     }
 
     /**

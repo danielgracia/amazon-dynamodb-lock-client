@@ -228,7 +228,16 @@ public class ConsistentLockDataStressTest extends InMemoryLockClientTester {
     }
 
     private static Integer getLockData(final LockItem lockItem) {
-        return Integer.valueOf(new String(lockItem.getData().orElse(ByteBuffer.wrap("0".getBytes())).array()));
+        return Integer.valueOf(new String(getByteArrayFromItem(lockItem)));
+    }
+
+    private static byte[] getByteArrayFromItem(LockItem lockItem) {
+        ByteBuffer byteBuffer = lockItem.getData().orElse(ByteBuffer.wrap("0".getBytes()));
+        if(!byteBuffer.isReadOnly()) return byteBuffer.array();
+
+        byte[] data = new byte[byteBuffer.capacity()];
+        byteBuffer.get(data).rewind();
+        return data;
     }
 
     private static ByteBuffer putLockData(final Integer count) {
